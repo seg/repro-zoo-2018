@@ -1,0 +1,79 @@
+from rsf.proj import *
+from rsf.prog import RSFROOT
+import math
+
+# function that creates synthetic model:
+def faulted_synth(name,n1=72,n2=61,faultthrow=-4,d1=1,d2=1,o1=0,o2=0,dt=.004,fhi=60):
+    # make left side of fault
+    Flow(name+'-eighth',None,'''
+        math n1=%i o1=%g d1=%g output=2 
+        '''%(n2/2+1,o2,d2))
+    Flow(name+'-quarter',name+'-eighth','''
+        pad n2=%i | put o2=%g d2=%g  
+        '''%(n1/3,o1,d1))
+    Flow(name+'-half',name+'-quarter','''
+        cat axis=2 $SOURCE | 
+        pad beg2=%i | put o2=%g | 
+        transp'''%(n1/3,o1))
+    # complete the synthetic
+    if (faultthrow >= 0): 
+        Flow(name+'-full',name+'-half','''
+            pad beg1=%i | window n1=%i | put o1=%g |
+            cat $SOURCE  axis=2 |
+            reverse which=2 opt=i | window n2=%i
+            '''%(1*faultthrow,n1,o1,n2))
+    else:
+        Flow(name+'-full',name+'-half','''
+            window f1=%i | pad n1=%i | put o1=%g |
+            cat $SOURCE axis=2 |
+            reverse which=2 opt=i | window n2=%i
+            '''%(-1*faultthrow,n1,o1,n2))
+    # bandpass to generate 1d synthetic
+    Flow(name,name+'-full','''
+        put d1=%g|
+        bandpass fhi=%g|
+        put d1=%g
+        '''%(dt,fhi,d1))
+    # plot the synthetic
+    Result(name,'grey title="Synthetic Model" ')
+    return;
+    
+# define plotting function for the smoothing results
+def plot(file,name):
+    Result(file,'graph min2=-.5 max2=1.5 label2="Function Value" title='+name)
+    return;
+    
+# generate the synthetic model
+faulted_synth('synth')
+# time index for the slice used for 1d edge preserving smoothing
+time_index = 20
+Flow('model','synth','window n1=1 f1=%i'%time_index)
+plot('model','Input')
+# define mean smoothing c program compilation using Madagascar tools
+proj = Project()
+mean = proj.Program('mean-smooth-one.c')
+mean_exe = str(mean[0])
+# generate model with noise
+Flow('noise','model','noise range=.5 ')
+# plot model with noise
+plot('noise','"model with noise"')
+# smoothing radius : stencil will be 2*r1+1
+r1 = 10
+# apply mean smoothing to noised model
+Flow('mean',['noise',mean_exe],'''
+    ./${SOURCES[1]} r1=%i
+    '''%r1)
+# plot output of mean smoothing
+plot('mean','"Mean Smoothed Noise"')
+
+# define edge smoothing c program compilation using Madagascar tools
+edge = proj.Program('edge-smooth-one.c')
+edge_exe = str(edge[0])
+
+# apply edge preserving smoothing to noised model
+Flow('edge',['noise',edge_exe],'''
+    ./${SOURCES[1]} r1=%i
+    '''%r1)
+plot('edge','"Edge Preserving Smoothing"')
+
+End()

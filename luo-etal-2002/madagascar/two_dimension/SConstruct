@@ -1,0 +1,103 @@
+from rsf.proj import *
+from rsf.prog import RSFROOT
+import os
+
+# define function that makes checkerboard
+def checkerboard(name,n1=52,n2=52,o1=0,o2=0,d1=4,d2=4):
+    # o# refers to first box offset
+    # d# refers to how many indexes each box covers
+    # make precursor files
+    # in first dimension
+    Flow(name+'-p1',None,'''
+        math n1=%i n2=%i o1=0 o2=0 d1=1 d2=1 
+        label1="X Index" label2="Y Index"
+        output="(x1-%g)/%g+1" | 
+        dd type=int trunc=y | dd type=float
+        '''%(n1,n2,o1,d1))
+    # and the second dimension
+    Flow(name+'-p2',name+'-p1','''
+        math output="(x2-%g)/%g+1" |
+        dd type=int trunc=y | dd type=float
+        '''%(o2,d2))
+    # combine
+    Flow(name+'-p',[name+'-p1',name+'-p2'],'add ${SOURCES[1]}')
+    # and finish
+    Flow(name,name+'-p','''
+        scale dscale=.5|
+        dd type=int trunc=y | dd type=float |
+        scale dscale=2 |
+        math A=$SOURCE output="input/A" |
+        dd type=int trunc=y | dd type=float
+        ''')
+    return;
+
+# define synth plotting
+def plot_synth(name,title):
+    Result(name,'transp | reverse which=1 | grey title="%s" allpos=y color=j'%title)
+
+checkerboard('synth')
+plot_synth('synth','2D Synthetic')
+# add noise 
+Flow('noise','synth','noise range=1 ')
+plot_synth('noise','2D Synthetic with Noise')
+# compilation for mean smoothing
+proj = Project()
+mean = proj.Program('mean-smooth-two.c')
+mean_exe = str(mean[0])
+# compilation for edge smoothing
+proj = Project()
+mean = proj.Program('edge-smooth-two.c')
+edge_exe = str(mean[0])
+
+# smoothing radius : stencil will be 2*r1+1
+r1 = 2
+r2 = 2
+
+# loop through smoothing radius of 4.5
+namelst = ['4 x 4 Stencil ','5 x 5 Stencil ']
+for f in range(2):
+    # apply mean smoothing to noised model
+    Flow('mean-%i'%f,['noise',mean_exe],'''
+        ./${SOURCES[1]} r1=%i r2=%i flag=%i
+        '''%(r1,r2,f))
+    plot_synth('mean-%i'%f,namelst[f]+' Mean Smoothing')
+    # apply edge preserving smoothing to noised model
+    Flow('edge-%i'%f,['noise',edge_exe],'''
+        ./${SOURCES[1]} r1=%i r2=%i flag=%i
+        '''%(r1,r2,f))
+    plot_synth('edge-%i'%f,namelst[f]+' Edge Pres. Smoothing') 
+    
+# perform edge detection on synthetics
+edgedetectlst = ['synth','noise','mean-0','edge-0']
+edgenamelst = ["Synthetic","Noisy","Mean Smoothed","Edge Pres. Smthd."]
+for e in range(len(edgedetectlst)):
+    filenm = edgedetectlst[e]
+    Flow(filenm+'-edge-detect',filenm,'laplace | add abs=y')
+    plot_synth(filenm+'-edge-detect',edgenamelst[e]+' Edge Detection')
+End()
+
+# and now we repeat the process on field data
+# lets define a function
+def field_data_edge(name,sr1,sr2,n1,n2,d1=1,d2=1,o1=0,o2=0):
+    # if file already exists, delete it
+    os.system('rm %s.dat '%name)
+    # pull file
+    os.system('wget https://s3.amazonaws.com/open.source.geoscience/repro-zoo-2018/luo-zoo-2002/%s.dat'%name)
+    # create dummy rsf header
+    os.system('''echo n1=%i n2=%i d1=%g d2=%g o1=%g o2=%g data_format="xdr_float" esize=4 in=%s.dat > %s.rsf'''%(n1,n2,d1,d2,o1,o2,name,name))
+    # plot file
+    plot_synth(name,'%s Field Data'%name)
+    # perform edge preserving smoothing
+    Flow(name+'-edge',[name,edge_exe],'./${SOURCES[1]} r1=%i r2=%i'%(sr1,sr2))
+    # plot result
+    plot_synth(name+'-edge','%s Edge Pres. Smoothed Data'%name)
+    edlst = [name,name+'-edge']
+    nmlst = ["Input Data","Edge Pres. Smthd."]
+    for e in range(len(edlst)):
+        Flow(edlst[e]+'-ed',edlst[e],'laplace | add abs=y')
+        plot_synth(edlst[e]+'-ed',nmlst[e]+' Edge Detection')
+
+# and apply it to the field data     
+fieldlst = ['gx122','gx130']
+for f in range(len(fieldlst)):
+    field_data_edge(fieldlst[f],5,5,1200,1750)
