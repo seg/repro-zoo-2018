@@ -1,0 +1,10 @@
+channels:
+  - defaults
+dependencies:
+  - matplotlib
+  - seaborn
+  - scipy
+  - pandas
+  - pip:
+    - bruges
+    - welly
