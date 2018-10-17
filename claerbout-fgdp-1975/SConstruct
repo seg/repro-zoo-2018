@@ -1,0 +1,18 @@
+from rsf.proj import *
+
+# FGDP test case
+#
+# In: (0.0, 0.0), (0.0, 8.0), (16.0, 0.0), (0.0, 0.0)
+#
+# Out: (15.6, -0.0), (0.0, -8.7), (-0.4, -0.0), (0.0, -0.7)
+
+Flow('inp',None,'spike nsp=2 n1=8 k1=4,5 mag=8,16 | dd type=complex')
+
+Flow('out','inp','ckolmog')
+
+#$ < out.rsf sfdisfil
+#   0:      15.63,         0i         0,     -8.67i   -0.3715,         0i
+#   3:          0,   -0.6698i
+
+
+End()
