@@ -1267,7 +1267,7 @@ class Filter(object):
     diagnostic = ('attr','disfil')
     def __init__(self,name,prefix='sf',srcs=[],
                  run=False,checkpar=False,pipe=False):
-        rsfroot = rsf.prog.RSFROOT
+        rsfroot = '/' #rsf.prog.RSFROOT
         self.plot = False
         self.stdout = True
         self.prog = None
