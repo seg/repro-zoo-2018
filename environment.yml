@@ -4,6 +4,7 @@ dependencies:
   - matplotlib
   - seaborn
   - scipy
+  - jupyter
   - pandas
   - pip:
     - bruges
